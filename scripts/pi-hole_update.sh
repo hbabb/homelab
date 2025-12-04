@@ -39,6 +39,8 @@ else
     UPGRADE_EXIT=$APK_EXIT
 fi
 
+echo "$APK_STATUS" | tee -a "$LOG_FILE"
+
 # Update Pi-hole
 echo "Updating Pi-hole..." | tee -a "$LOG_FILE"
 PIHOLE_OUTPUT=$(pihole -up 2>&1)
@@ -50,6 +52,8 @@ if [ $PIHOLE_EXIT -eq 0 ]; then
 else
     PIHOLE_STATUS="❌ Pi-hole update failed (exit $PIHOLE_EXIT)"
 fi
+
+echo "$PIHOLE_STATUS" | tee -a "$LOG_FILE"
 
 # Update gravity (blocklists)
 echo "Updating gravity..." | tee -a "$LOG_FILE"
@@ -63,45 +67,29 @@ else
     GRAVITY_STATUS="❌ Gravity update failed (exit $GRAVITY_EXIT)"
 fi
 
-# Determine overall status
+echo "$GRAVITY_STATUS" | tee -a "$LOG_FILE"
+
+# Determine status
 if [ $UPGRADE_EXIT -eq 0 ] && [ $PIHOLE_EXIT -eq 0 ] && [ $GRAVITY_EXIT -eq 0 ]; then
-    OVERALL_STATUS="SUCCESS"
-    SUBJECT="✅ Pi-hole Updates Complete - All Successful"
+    SUBJECT="✅ Pi-hole Updates - Success"
+    MESSAGE="All updates completed successfully"
 else
-    OVERALL_STATUS="FAILED"
-    SUBJECT="❌ Pi-hole Updates Complete - Some Failed"
+    SUBJECT="❌ Pi-hole Updates - Failed"
+    MESSAGE="Some updates failed - check server logs"
 fi
 
-# Create email body
-EMAIL_BODY="Pi-hole Update Report
-
-Status: $OVERALL_STATUS
-Hostname: $HOSTNAME
-Timestamp: $TIMESTAMP
-
-Results:
----------
-$APK_STATUS
-$PIHOLE_STATUS
-$GRAVITY_STATUS
-
-Full logs available at: $LOG_FILE on $HOSTNAME"
-
-# Send email via Resend API (secrets from .env file)
+# Send email
 echo "Sending email notification..." | tee -a "$LOG_FILE"
-curl -X POST "https://api.resend.com/emails" \
+curl -X POST 'https://api.resend.com/emails' \
     -H "Authorization: Bearer $RESEND_API" \
-    -H "Content-Type: application/json" \
-    -d "{
-        \"from\": \"$FROM_EMAIL\",
-        \"to\": [\"$TO_EMAIL\"],
-        \"subject\": \"$SUBJECT\",
-        \"text\": \"$EMAIL_BODY\"
-    }" \
-    --silent --show-error | tee -a "$LOG_FILE"
+    -H 'Content-Type: application/json' \
+    -d '{
+        "from": "'"$FROM_EMAIL"'",
+        "to": ["'"$TO_EMAIL"'"],
+        "subject": "'"$SUBJECT"'",
+        "text": "'"$MESSAGE"'"
+    }' >> "$LOG_FILE" 2>&1
 
-echo "" | tee -a "$LOG_FILE"
 echo "=== Update Complete: $TIMESTAMP ===" | tee -a "$LOG_FILE"
-echo "" | tee -a "$LOG_FILE"
 
 exit $((UPGRADE_EXIT + PIHOLE_EXIT + GRAVITY_EXIT))
